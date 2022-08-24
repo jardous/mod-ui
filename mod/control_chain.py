@@ -146,7 +146,7 @@ class ControlChainDeviceListener(object):
                 data_dev_id = data['device_id']
 
                 if data['status']:
-                    yield gen.Task(self.send_device_descriptor, data_dev_id)
+                    yield self.send_device_descriptor(data_dev_id)
 
                 else:
                     for dev_uri, (dev_id, label, labelsuffix, version) in self.hw_versions.items():
@@ -223,7 +223,7 @@ class ControlChainDeviceListener(object):
     @gen.coroutine
     def device_list_init(self, dev_list):
         for dev_id in dev_list:
-            yield gen.Task(self.send_device_descriptor, dev_id)
+            yield self.send_device_descriptor(dev_id)
 
         if not self.initialized:
             self.send_request('device_status', {'enable':1}, self.process_read_queue)

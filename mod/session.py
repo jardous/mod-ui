@@ -91,7 +91,7 @@ class Session(object):
             self.hmi = FakeHMI(self.hmi_initialized_cb)
             print("Using FakeHMI =>", self.hmi)
 
-        self.host = Host(self.hmi, self.prefs, self.msg_callback)
+        self.host = Host(self.hmi, self.prefs, self.msg_callback, self.hmi_initialized_cb)
 
     def signal_save(self):
         # reuse HMI function
@@ -133,10 +133,10 @@ class Session(object):
     # Initialization
 
     @gen.coroutine
-    def hmi_initialized_cb(self):
+    def hmi_initialized_cb(self):#, callback):
         self.hmi.initialized = not self.hmi.isFake()
         uiConnected = bool(len(self.websockets) > 0)
-        yield gen.Task(self.host.initialize_hmi, uiConnected)
+        yield self.host.initialize_hmi(uiConnected, lambda a: print(a))
 
     # This is very nasty, sorry
     def hmi_reinit_cb(self):
@@ -213,6 +213,7 @@ class Session(object):
         return self.host.set_midi_devices(newDevs, midiAggregatedMode, midiLoopback)
 
     # Send a ping to HMI and Websockets
+    @gen.coroutine
     def web_ping(self, callback):
         if self.hmi.initialized:
             self.hmi.ping(callback)
@@ -349,16 +350,16 @@ class Session(object):
 
     @gen.coroutine
     def hmi_set_pb_name(self, name):
-        yield gen.Task(self.hmi.set_pedalboard_name, name)
+        yield self.hmi.set_pedalboard_name(name)
 
     @gen.coroutine
     def hmi_set_pb_and_ss_name(self, pbname):
         if self.host.descriptor.get('hmi_set_pb_name', False):
-            yield gen.Task(self.hmi.set_pedalboard_name, pbname)
+            yield self.hmi.set_pedalboard_name(pbname)
 
         if self.host.descriptor.get('hmi_set_ss_name', False):
             ssname = self.host.snapshot_name() or DEFAULT_SNAPSHOT_NAME
-            yield gen.Task(self.hmi.set_snapshot_name, self.host.current_pedalboard_snapshot_id, ssname)
+            yield self.hmi.set_snapshot_name(self.host.current_pedalboard_snapshot_id, ssname)
 
     def readdress_presets(self, instance, callback):
         instance_id = self.host.mapper.get_id_without_creating(instance)

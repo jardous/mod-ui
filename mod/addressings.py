@@ -419,7 +419,7 @@ class Addressings(object):
             actuator_type = self.get_actuator_type(actuator_uri)
             if actuator_type == self.ADDRESSING_TYPE_HMI:
                 try:
-                    yield gen.Task(self.hmi_load_first, actuator_uri)
+                    yield self.hmi_load_first(actuator_uri)
                 except Exception as e:
                     logging.exception(e)
             elif actuator_type == self.ADDRESSING_TYPE_CC and cc_initialized:
@@ -452,7 +452,7 @@ class Addressings(object):
                     'midicontrol': addressing['midicontrol'],
                 }
                 try:
-                    yield gen.Task(self._task_addressing, self.ADDRESSING_TYPE_MIDI, actuator_uri, data)
+                    yield elf._task_addressing(self.ADDRESSING_TYPE_MIDI, actuator_uri, data)
                 except Exception as e:
                     logging.exception(e)
 
@@ -477,7 +477,7 @@ class Addressings(object):
                 loop_addressings()
 
             try:
-                yield gen.Task(self._task_set_available_pages, self.get_available_pages())
+                yield self._task_set_available_pages(self.get_available_pages())
             except Exception as e:
                 logging.exception(e)
 
@@ -503,7 +503,7 @@ class Addressings(object):
             # 'wait_initialized' will time-out in 10s if nothing happens
             print("NOTE: Waiting for Control Chain to initialize")
             try:
-                yield gen.Task(self.cchain.wait_initialized)
+                yield self.cchain.wait_initialized()
             except Exception as e:
                 logging.exception(e)
 
@@ -1055,7 +1055,7 @@ class Addressings(object):
                     self.hmi_load_current(actuator_uri, None, skippedPort, updateValue)
                 else:
                     try:
-                        yield gen.Task(self.hmi_load_current, actuator_uri, skippedPort=skippedPort, updateValue=updateValue)
+                        yield self.hmi_load_current(actuator_uri, skippedPort=skippedPort, updateValue=updateValue)
                     except Exception as e:
                         logging.exception(e)
 
@@ -1082,14 +1082,14 @@ class Addressings(object):
                     # NOTE we never call `value_set` for CC lists, as it breaks pagination
                     if feedback and (addressing['cctype'] & CC_MODE_OPTIONS) == 0x0:
                         try:
-                            yield gen.Task(self._task_set_value, self.ADDRESSING_TYPE_CC, actuator_cc, addressing)
+                            yield self._task_set_value(self.ADDRESSING_TYPE_CC, actuator_cc, addressing)
                         except Exception as e:
                             logging.exception(e)
                     else:
                         try:
-                            yield gen.Task(self._task_unaddressing, self.ADDRESSING_TYPE_CC,
-                                           addressing['instance_id'], addressing['port'])
-                            yield gen.Task(self._task_addressing, self.ADDRESSING_TYPE_CC, actuator_cc, addressing)
+                            yield self._task_unaddressing(self.ADDRESSING_TYPE_CC,
+                                                          addressing['instance_id'], addressing['port'])
+                            yield self._task_addressing(self.ADDRESSING_TYPE_CC, actuator_cc, addressing)
                         except Exception as e:
                             logging.exception(e)
 
@@ -1471,7 +1471,7 @@ class Addressings(object):
 
         for addressing in addressings:
             try:
-                yield gen.Task(self._task_addressing, self.ADDRESSING_TYPE_CC, actuator_cc, addressing)
+                yield self._task_addressing(self.ADDRESSING_TYPE_CC, actuator_cc, addressing)
             except Exception as e:
                 logging.exception(e)
 
@@ -1592,7 +1592,7 @@ class Addressings(object):
                 'operational_mode': addressing['operational_mode'],
             }
             try:
-                yield gen.Task(self._task_addressing, self.ADDRESSING_TYPE_CV, actuator_uri, data)
+                yield self._task_addressing(self.ADDRESSING_TYPE_CV, actuator_uri, data)
             except Exception as e:
                 logging.exception(e)
 

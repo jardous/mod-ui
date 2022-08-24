@@ -83,7 +83,7 @@ def install_bundles_in_tmp_dir(callback):
         bundlepath = os.path.join(LV2_PLUGIN_DIR, bundle)
 
         if os.path.exists(bundlepath):
-            resp, data = yield gen.Task(SESSION.host.remove_bundle, bundlepath, True, None)
+            resp, data = yield SESSION.host.remove_bundle(bundlepath, True, None)
 
             # When removing bundles we can ignore the ones that are not loaded
             # It can happen if a previous install failed abruptly
@@ -99,7 +99,7 @@ def install_bundles_in_tmp_dir(callback):
                 break
 
         shutil.move(tmppath, bundlepath)
-        resp, data = yield gen.Task(SESSION.host.add_bundle, bundlepath)
+        resp, data = yield SESSION.host.add_bundle(bundlepath)
 
         if resp:
             installed += data
@@ -185,7 +185,7 @@ def restart_services(restartJACK2, restartUI):
         cmd.append("jack2")
     if restartUI:
         cmd.append("mod-ui")
-    yield gen.Task(run_command, cmd, None)
+    yield run_command(cmd, None)
     reset_get_all_pedalboards_cache()
     lv2_cleanup()
     lv2_init()
@@ -193,7 +193,7 @@ def restart_services(restartJACK2, restartUI):
 @gen.coroutine
 def start_restore():
     os.sync()
-    yield gen.Task(SESSION.hmi.restore, datatype='boolean')
+    yield SESSION.hmi.restore(datatype='boolean')
 
 class TimelessRequestHandler(web.RequestHandler):
     def compute_etag(self):
@@ -287,8 +287,9 @@ class SimpleFileReceiver(JsonRequestHandler):
             (r"/%s/$" % path, cls),
         ]
 
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    ##@gen.engine
     def post(self, sessionid=None, chunk_number=None):
         # self.result can be set by subclass in process_file,
         # so that answer will be returned to browser
@@ -298,7 +299,7 @@ class SimpleFileReceiver(JsonRequestHandler):
             os.mkdir(self.destination_dir)
         with open(os.path.join(self.destination_dir, basename), 'wb') as fh:
             fh.write(self.request.body)
-        yield gen.Task(self.process_file, basename)
+        yield self.process_file(basename)
         self.write({
             'ok'    : True,
             'result': self.result
@@ -337,15 +338,16 @@ class MultiPartFileReceiver(JsonRequestHandler):
     def data_received(self, data):
         self.filehandle.write(data)
 
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         # self.result can be set by subclass in process_file,
         # so that answer will be returned to browser
         self.result = None
         self.filehandle.flush()
         self.filehandle.close()
-        yield gen.Task(self.process_file, self.basename)
+        yield self.process_file(self.basename)
         self.write({
             'ok'    : True,
             'result': self.result
@@ -461,7 +463,7 @@ class SystemExeChange(JsonRequestHandler):
                 cmd, cdata = cmd
 
             if cmd == "reboot":
-                yield gen.Task(run_command, ["hmi-reset"], None)
+                yield run_command(["hmi-reset"], None)
                 IOLoop.instance().add_callback(self.reboot)
 
             elif cmd == "restore":
@@ -474,7 +476,7 @@ class SystemExeChange(JsonRequestHandler):
                     args.append("-d")
                 if cdata[1] == "1":
                     args.append("-p")
-                resp  = yield gen.Task(run_command, args, None)
+                resp  = yield run_command(args, None)
                 error = resp[2].decode("utf-8", errors="ignore").strip()
                 if len(error) > 1:
                     error = error[0].title()+error[1:]+"."
@@ -491,7 +493,7 @@ class SystemExeChange(JsonRequestHandler):
                     args.append("-d")
                 if cdata[1] == "1":
                     args.append("-p")
-                resp = yield gen.Task(run_command, args, None)
+                resp = yield run_command(args, None)
                 error = resp[2].decode("utf-8", errors="ignore").strip()
                 if len(error) > 1:
                     error = error[0].title()+error[1:]+"."
@@ -584,10 +586,10 @@ class SystemExeChange(JsonRequestHandler):
                 if name == "hmi-update":
                     self.write(True)
                     finished = True
-                yield gen.Task(run_command, ["systemctl", "start", servicename], None)
+                yield grun_command(["systemctl", "start", servicename], None)
 
             else:
-                yield gen.Task(run_command, ["systemctl", "stop", servicename], None)
+                yield run_command(["systemctl", "stop", servicename], None)
 
         if not finished:
             os.sync()
@@ -596,7 +598,7 @@ class SystemExeChange(JsonRequestHandler):
     @gen.coroutine
     def reboot(self):
         os.sync()
-        yield gen.Task(run_command, ["reboot"], None)
+        yield run_command(["reboot"], None)
 
 class SystemCleanup(JsonRequestHandler):
     @gen.coroutine
@@ -638,13 +640,13 @@ class SystemCleanup(JsonRequestHandler):
         if hmiSettings:
             # NOTE this will desync HMI, but we always restart ourselves at the end
             SESSION.hmi.reset_eeprom(None)
-            yield gen.Task(SESSION.hmi.ping)
-            yield gen.Task(run_command, ["hmi-reset"], None)
+            yield SESSION.hmi.ping()
+            yield run_command(["hmi-reset"], None)
 
         if plugins:
-            yield gen.Task(run_command, ["systemctl", "stop", "jack2"], None)
+            yield run_command(["systemctl", "stop", "jack2"], None)
 
-        yield gen.Task(run_command, ["rm", "-rf"] + stuffToDelete, None)
+        yield run_command(["rm", "-rf"] + stuffToDelete, None)
         os.sync()
 
         self.write({
@@ -672,8 +674,9 @@ class UpdateDownload(MultiPartFileReceiver):
         self.sfr_callback()
 
 class UpdateBegin(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         if not os.path.exists(UPDATE_MOD_OS_FILE):
             self.write(False)
@@ -709,8 +712,9 @@ class ControlChainCancel(JsonRequestHandler):
 class EffectInstaller(SimpleFileReceiver):
     destination_dir = DOWNLOAD_TMP_DIR
 
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def process_file(self, basename, callback=lambda:None):
         def on_finish(resp):
             reset_get_all_pedalboards_cache()
@@ -742,8 +746,9 @@ class EffectList(JsonRequestHandler):
         self.write(data)
 
 class SDKEffectInstaller(EffectInstaller):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         upload   = self.request.files['package'][0]
         filename = os.path.join(DOWNLOAD_TMP_DIR, upload['filename'])
@@ -751,7 +756,7 @@ class SDKEffectInstaller(EffectInstaller):
         with open(filename, 'wb') as fh:
             fh.write(b64decode(upload['body']))
 
-        resp = yield gen.Task(install_package, filename)
+        resp = yield install_package(filename)
 
         if resp['ok']:
             SESSION.msg_callback("rescan " + b64encode(json.dumps(resp).encode("utf-8")).decode("utf-8"))
@@ -896,14 +901,16 @@ class EffectFile(TimelessStaticFileHandler):
         return TimelessStaticFileHandler.get_content_type(self)
 
 class EffectAdd(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
     def get(self, instance):
         uri = self.get_argument('uri')
         x   = float(self.request.arguments.get('x', [0])[0])
         y   = float(self.request.arguments.get('y', [0])[0])
 
-        ok = yield gen.Task(SESSION.web_add, instance, uri, x, y)
+        @gen.coroutine
+        def web_add_cb(self):
+            print("EffectAdd.web_add_cb")
+        ok = yield SESSION.web_add(instance, uri, x, y, web_add_cb)
 
         if not ok:
             self.write(False)
@@ -918,10 +925,11 @@ class EffectAdd(JsonRequestHandler):
         self.write(data)
 
 class EffectRemove(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, instance):
-        ok = yield gen.Task(SESSION.web_remove, instance)
+        ok = yield SESSION.web_remove(instance)
         self.write(ok)
 
 class EffectGet(CachedJsonRequestHandler):
@@ -949,22 +957,25 @@ class EffectGetNonCached(JsonRequestHandler):
         self.write(data)
 
 class EffectConnect(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, port_from, port_to):
-        ok = yield gen.Task(SESSION.web_connect, port_from, port_to)
+        ok = yield SESSION.web_connect(port_from, port_to)
         self.write(ok)
 
 class EffectDisconnect(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, port_from, port_to):
-        ok = yield gen.Task(SESSION.web_disconnect, port_from, port_to)
+        ok = yield SESSION.web_disconnect(port_from, port_to)
         self.write(ok)
 
 class EffectParameterAddress(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def post(self, port):
         data = json.loads(self.request.body.decode("utf-8", errors="ignore"))
         uri  = data.get('uri', None)
@@ -991,19 +1002,21 @@ class EffectParameterAddress(JsonRequestHandler):
         if subpage is not None:
             subpage = int(subpage)
 
-        ok = yield gen.Task(SESSION.web_parameter_address, port, uri, label, minimum, maximum, value,
-                            steps, tempo, dividers, page, subpage, coloured, momentary, operational_mode)
+        ok = yield SESSION.web_parameter_address(port, uri, label, minimum, maximum, value,
+                                                 steps, tempo, dividers, page, subpage, coloured,
+                                                 momentary, operational_mode)
 
         self.write(ok)
 
 class EffectPresetLoad(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, instance):
         uri = self.get_argument('uri')
 
         abort_catcher = SESSION.host.abort_previous_loading_progress("web EffectPresetLoad")
-        ok = yield gen.Task(SESSION.host.preset_load_gen_helper, instance, uri, False, abort_catcher)
+        ok = yield SESSION.host.preset_load_gen_helper(instance, uri, False, abort_catcher)
 
         if not ok:
             self.write(False)
@@ -1018,15 +1031,16 @@ class EffectPresetLoad(JsonRequestHandler):
 
         try:
             ok = yield gen.with_timeout(timedelta(seconds=10),
-                                        gen.Task(SESSION.host.paramhmi_set, instance, ":presets", value))
+                                        SESSION.host.paramhmi_set(instance, ":presets", value))
         except gen.TimeoutError:
             self.write(False)
         else:
             self.write(ok)
 
 class EffectParameterSet(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         if not SESSION.hmi.initialized:
             self.write(True)
@@ -1035,47 +1049,50 @@ class EffectParameterSet(JsonRequestHandler):
         symbol, instance, portsymbol, value = data.rsplit("/",3)
         try:
             ok = yield gen.with_timeout(timedelta(seconds=5),
-                                        gen.Task(SESSION.host.paramhmi_set, instance, portsymbol, value))
+                                        SESSION.host.paramhmi_set(instance, portsymbol, value))
         except gen.TimeoutError:
             self.write(False)
         else:
             self.write(True)
 
 class EffectPresetSaveNew(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, instance):
         name = self.get_argument('name')
-        resp = yield gen.Task(SESSION.host.preset_save_new, instance, name)
+        resp = yield SESSION.host.preset_save_new(instance, name)
         try:
-            yield gen.Task(SESSION.readdress_presets, instance)
+            yield SESSION.readdress_presets(instance)
         except Exception as e:
             logging.exception(e)
         self.write(resp)
 
 class EffectPresetSaveReplace(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, instance):
         uri    = self.get_argument('uri')
         bundle = self.get_argument('bundle')
         name   = self.get_argument('name')
-        resp   = yield gen.Task(SESSION.host.preset_save_replace, instance, uri, bundle, name)
+        resp   = yield SESSION.host.preset_save_replace(instance, uri, bundle, name)
         try:
-            yield gen.Task(SESSION.readdress_presets, instance)
+            yield SESSION.readdress_presets(instance)
         except Exception as e:
             logging.exception(e)
         self.write(resp)
 
 class EffectPresetDelete(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def get(self, instance):
         uri    = self.get_argument('uri')
         bundle = self.get_argument('bundle')
-        ok     = yield gen.Task(SESSION.host.preset_delete, instance, uri, bundle)
+        ok     = yield SESSION.host.preset_delete(instance, uri, bundle)
         try:
-            yield gen.Task(SESSION.readdress_presets, instance)
+            yield SESSION.readdress_presets(instance)
         except Exception as e:
             logging.exception(e)
         self.write(ok)
@@ -1106,12 +1123,14 @@ class ServerWebSocket(websocket.WebSocketHandler):
     def open(self):
         print("websocket open")
         self.set_nodelay(True)
-        yield gen.Task(SESSION.websocket_opened, self)
+        def websocket_opened_cb(w):
+            print("websocket_opened callback")
+        yield SESSION.websocket_opened(self, websocket_opened_cb)
 
     @gen.coroutine
     def on_close(self):
         print("websocket close")
-        yield gen.Task(SESSION.websocket_closed, self)
+        yield SESSION.websocket_closed(self)
 
     def on_message(self, message):
         if message == "pong":
@@ -1183,8 +1202,8 @@ class ServerWebSocket(websocket.WebSocketHandler):
             print("Unexpected command received over websocket")
 
 class PackageUninstall(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         bundles = json.loads(self.request.body.decode("utf-8", errors="ignore"))
         error   = ""
@@ -1198,7 +1217,7 @@ class PackageUninstall(JsonRequestHandler):
                     error = "bundlepath '{}' is not in LV2_PATH".format(bundlepath)
                     break
 
-                resp, data = yield gen.Task(SESSION.host.remove_bundle, bundlepath, True, None)
+                resp, data = yield SESSION.host.remove_bundle(bundlepath, True, None)
 
                 if resp:
                     removed += data
@@ -1245,8 +1264,9 @@ class PedalboardList(JsonRequestHandler):
         self.write(all)
 
 class PedalboardSave(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    #@gen.coroutine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         title = self.get_argument('title')
         asNew = bool(int(self.get_argument('asNew')))
@@ -1266,8 +1286,8 @@ class PedalboardSave(JsonRequestHandler):
             update_cached_pedalboard_version(bundlepath)
 
 class PedalboardPackBundle(TimelessRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         # ~/.pedalboards/name.pedalboard/
         bundlepath = os.path.abspath(self.get_argument('bundlepath'))
@@ -1333,8 +1353,8 @@ class PedalboardPackBundle(TimelessRequestHandler):
         ioloop.add_handler(self.proc.stdout.fileno(), end_proc1, 16)
 
 class PedalboardLoadBundle(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         bundlepath = os.path.abspath(self.get_argument("bundlepath"))
 
@@ -1368,8 +1388,8 @@ class PedalboardLoadRemote(RemoteRequestHandler):
 class PedalboardLoadWeb(SimpleFileReceiver):
     destination_dir = "/tmp/pedalboards"
 
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def process_file(self, basename, callback=lambda:None):
         filename = os.path.join(self.destination_dir, basename)
 
@@ -1420,11 +1440,11 @@ class PedalboardImage(TimelessStaticFileHandler):
         return os.path.join(self.root, "%s.png" % image)
 
 class PedalboardImageGenerate(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         bundlepath = os.path.abspath(self.get_argument('bundlepath'))
-        ok, ctime  = yield gen.Task(SESSION.screenshot_generator.schedule_screenshot, bundlepath)
+        ok, ctime  = yield SESSION.screenshot_generator.schedule_screenshot(bundlepath)
         self.write({
             'ok'   : ok,
             'ctime': "%.1f" % ctime,
@@ -1440,19 +1460,19 @@ class PedalboardImageCheck(CachedJsonRequestHandler):
         })
 
 class PedalboardImageWait(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         bundlepath = os.path.abspath(self.get_argument('bundlepath'))
-        ok, ctime  = yield gen.Task(SESSION.screenshot_generator.wait_for_pending_jobs, bundlepath)
+        ok, ctime  = yield SESSION.screenshot_generator.wait_for_pending_jobs(bundlepath)
         self.write({
             'ok'   : ok,
             'ctime': "%.1f" % ctime,
         })
 
 class PedalboardCvAddressingPluginPortAdd(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         uri = self.get_argument('uri')
         name = self.get_argument('name')
@@ -1463,16 +1483,16 @@ class PedalboardCvAddressingPluginPortAdd(JsonRequestHandler):
         })
 
 class PedalboardCvAddressingPluginPortRemove(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         uri = self.get_argument('uri')
-        resp = yield gen.Task(SESSION.web_cv_addressing_plugin_port_remove, uri)
+        resp = yield SESSION.web_cv_addressing_plugin_port_remove(uri)
         self.write(resp)
 
 class PedalboardTransportSetSyncMode(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def post(self, mode):
         if mode == "/none":
             transport_sync = Profile.TRANSPORT_SOURCE_INTERNAL
@@ -1483,7 +1503,7 @@ class PedalboardTransportSetSyncMode(JsonRequestHandler):
         else:
             self.write(False)
             return
-        ok = yield gen.Task(SESSION.web_set_sync_mode, transport_sync)
+        ok = yield SESSION.web_set_sync_mode(transport_sync)
         self.write(ok)
 
 class SnapshotSave(JsonRequestHandler):
@@ -1492,14 +1512,14 @@ class SnapshotSave(JsonRequestHandler):
         self.write(ok)
 
 class SnapshotSaveAs(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         title = self.get_argument('title')
         idx   = SESSION.host.snapshot_saveas(title)
         title = SESSION.host.snapshot_name(idx)
 
-        yield gen.Task(SESSION.host.hmi_report_ss_name_if_current, idx)
+        yield SESSION.host.hmi_report_ss_name_if_current(idx)
 
         self.write({
             'ok': idx is not None,
@@ -1508,8 +1528,8 @@ class SnapshotSaveAs(JsonRequestHandler):
         })
 
 class SnapshotRename(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         idx   = int(self.get_argument('id'))
         title = self.get_argument('title')
@@ -1518,7 +1538,7 @@ class SnapshotRename(JsonRequestHandler):
         if ok:
             title = SESSION.host.snapshot_name(idx)
 
-        yield gen.Task(SESSION.host.hmi_report_ss_name_if_current, idx)
+        yield SESSION.host.hmi_report_ss_name_if_current(idx)
 
         self.write({
             'ok': ok,
@@ -1547,19 +1567,19 @@ class SnapshotName(JsonRequestHandler):
         })
 
 class SnapshotLoad(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         idx = int(self.get_argument('id'))
         abort_catcher = SESSION.host.abort_previous_loading_progress("web SnapshotLoad")
-        ok = yield gen.Task(SESSION.host.snapshot_load_gen_helper, idx, False, abort_catcher)
+        ok = yield SESSION.host.snapshot_load_gen_helper(idx, False, abort_catcher)
         self.write(ok)
 
 class DashboardClean(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
-        ok = yield gen.Task(SESSION.reset)
+        ok = yield SESSION.reset()
         self.write(ok)
 
 class BankLoad(JsonRequestHandler):
@@ -1643,7 +1663,9 @@ class TemplateHandler(TimelessRequestHandler):
         section = path.split('.',1)[0]
 
         if section == 'index':
-            yield gen.Task(SESSION.wait_for_hardware_if_needed)
+            def wait_for_hardware_if_needed_cb():
+                print("wait_for_hardware_if_needed callback")
+            yield SESSION.wait_for_hardware_if_needed(wait_for_hardware_if_needed_cb)
 
         try:
             context = getattr(self, section)()
@@ -1791,14 +1813,17 @@ class BulkTemplateLoader(TimelessRequestHandler):
         self.set_header("Expires", "Mon, 31 Dec 2035 12:00:00 gmt")
 
 class Ping(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def get(self):
         start = end = time.time()
 
+        @gen.coroutine
+        def web_ping_cb(self):
+            print("Ping.web_ping_cb")
+
         try:
-            online = yield gen.with_timeout(timedelta(seconds=5),
-                                            gen.Task(SESSION.web_ping))
+            online = yield gen.with_timeout(timedelta(seconds=5), SESSION.web_ping(web_ping_cb))
         except gen.TimeoutError:
             online = True
 
@@ -1902,8 +1927,8 @@ class JackGetMidiDevices(JsonRequestHandler):
         })
 
 class JackSetMidiDevices(JsonRequestHandler):
-    @web.asynchronous
-    @gen.engine
+    @gen.coroutine
+    #@gen.engine
     def post(self):
         data = json.loads(self.request.body.decode("utf-8", errors="ignore"))
         devs = data['devs']
@@ -1982,7 +2007,7 @@ class RecordingReset(JsonRequestHandler):
 class RecordingPlay(JsonRequestHandler):
     waiting_request = None
 
-    @web.asynchronous
+    @gen.coroutine
     def get(self, action):
         if action == 'start':
             SESSION.web_playing_start(RecordingPlay.stop_callback)
